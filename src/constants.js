@@ -1,7 +1,9 @@
 export const ACTIONS = {
-    SELECT: "SELECT",
-    RECTANGLE: "RECTANGLE",
-    CIRCLE: "CIRCLE",
-    SCRIBBLE: "SCRIBBLE",
-    ARROW: "ARROW",
-};
+    SELECT: "select",
+    RECTANGLE: "rectangle",
+    CIRCLE: "circle",
+    ARROW: "arrow",
+    SCRIBBLE: "scribble",
+    CONNECT: "connect"   // <--- add this
+  }
+  
