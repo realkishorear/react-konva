@@ -183,14 +183,26 @@ const App = () => {
   };
 
   const handleExport = () => {
-    const uri = stageRef.current.toDataURL();
+    const data = {
+      rectangles,
+      circles,
+      scribbles,
+      connections
+    };
+
+    const json = JSON.stringify(data, null, 2); // Pretty print
+    const blob = new Blob([json], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+
     const link = document.createElement('a');
-    link.download = "canvas.png";
-    link.href = uri;
+    link.download = 'canvas.json';
+    link.href = url;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    URL.revokeObjectURL(url); // Clean up
   };
+
 
   const deleteSelected = () => {
     if (!selectedId) return;
@@ -245,7 +257,6 @@ const App = () => {
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
       >
-        {/* Layer 1 - Shapes (background) */}
         <Layer>
           <Rect
             x={0}
@@ -303,7 +314,6 @@ const App = () => {
             />
           ))}
 
-          {/* 🟢 SNAP POINTS VISIBLE IN CONNECT MODE */}
           {showSnapPoints && getSnapPointsWithShape().map((p, idx) => (
             <Circle
               key={idx}
@@ -318,7 +328,6 @@ const App = () => {
           <Transformer ref={transformerRef} />
         </Layer>
 
-        {/* ✅ Layer 2 - Arrows ABOVE shapes */}
         <Layer>
           {connections.map((conn) => {
             const fromShape = findShapeById(conn.from);
