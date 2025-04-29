@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Stage, Layer, Rect, Circle, Line, Transformer } from 'react-konva';
+import { Stage, Layer, Rect, Circle, Line, Arrow, Transformer } from 'react-konva';
 import { v4 as uuidv4 } from 'uuid';
 import { GiArrowCursor } from "react-icons/gi";
 import { TbRectangle } from "react-icons/tb";
@@ -33,6 +33,59 @@ const App = () => {
 
   const isDraggable = action === ACTIONS.SELECT;
 
+  const getSnapPoints = (shape) => {
+    if (!shape) return [];
+
+    if (shape.radius) {
+      return [
+        { x: shape.x, y: shape.y - shape.radius, side: 'top' },
+        { x: shape.x, y: shape.y + shape.radius, side: 'bottom' },
+        { x: shape.x - shape.radius, y: shape.y, side: 'left' },
+        { x: shape.x + shape.radius, y: shape.y, side: 'right' }
+      ];
+    } else {
+      return [
+        { x: shape.x + shape.width / 2, y: shape.y, side: 'top' },
+        { x: shape.x + shape.width / 2, y: shape.y + shape.height, side: 'bottom' },
+        { x: shape.x, y: shape.y + shape.height / 2, side: 'left' },
+        { x: shape.x + shape.width, y: shape.y + shape.height / 2, side: 'right' }
+      ];
+    }
+  };
+
+  const showSnapPoints = action === ACTIONS.CONNECT;
+
+  const getSnapPointsWithShape = () => {
+    return [...rectangles, ...circles].flatMap(shape => {
+      const points = getSnapPoints(shape);
+      return points.map(p => ({ ...p, shapeId: shape.id }));
+    });
+  };
+
+
+  const getClosestSnapPoints = (fromShape, toShape) => {
+    const fromPoints = getSnapPoints(fromShape);
+    const toPoints = getSnapPoints(toShape);
+
+    let minDistance = Infinity;
+    let closest = { from: fromPoints[0], to: toPoints[0] };
+
+    fromPoints.forEach(fp => {
+      toPoints.forEach(tp => {
+        const dist = Math.hypot(tp.x - fp.x, tp.y - fp.y);
+        if (dist < minDistance) {
+          minDistance = dist;
+          closest = { from: fp, to: tp };
+        }
+      });
+    });
+
+    return {
+      from: closest.from,
+      to: closest.to
+    };
+  };
+
   const onPointerDown = (e) => {
     if (action === ACTIONS.SELECT) return;
 
@@ -44,10 +97,10 @@ const App = () => {
 
     switch (action) {
       case ACTIONS.RECTANGLE:
-        setRectangles(prev => [...prev, { id, x, y, width: 30, height: 20, fillColor }]);
+        setRectangles(prev => [...prev, { id, x, y, width: 0, height: 0, fillColor }]);
         break;
       case ACTIONS.CIRCLE:
-        setCircles(prev => [...prev, { id, x, y, radius: 40, fillColor }]);
+        setCircles(prev => [...prev, { id, x, y, radius: 0, fillColor }]);
         break;
       case ACTIONS.SCRIBBLE:
         setScribbles(prev => [...prev, { id, points: [x, y], fillColor }]);
@@ -82,6 +135,27 @@ const App = () => {
     return [...rectangles, ...circles].find(s => s.id === id);
   };
 
+  const getSidePosition = (shape, side) => {
+    if (!shape) return { x: 0, y: 0 };
+
+    if (shape.radius) {
+      const offset = shape.radius;
+      return {
+        top: { x: shape.x, y: shape.y - offset },
+        bottom: { x: shape.x, y: shape.y + offset },
+        left: { x: shape.x - offset, y: shape.y },
+        right: { x: shape.x + offset, y: shape.y }
+      }[side];
+    } else {
+      return {
+        top: { x: shape.x + shape.width / 2, y: shape.y },
+        bottom: { x: shape.x + shape.width / 2, y: shape.y + shape.height },
+        left: { x: shape.x, y: shape.y + shape.height / 2 },
+        right: { x: shape.x + shape.width, y: shape.y + shape.height / 2 }
+      }[side];
+    }
+  };
+
   const clicked = (e, id) => {
     if (action === ACTIONS.SELECT) {
       transformerRef.current.nodes([e.target]);
@@ -90,7 +164,19 @@ const App = () => {
       selectedForConnection.current.push(id);
       if (selectedForConnection.current.length === 2) {
         const [from, to] = selectedForConnection.current;
-        setConnections(prev => [...prev, { id: uuidv4(), from, to }]);
+        const fromShape = findShapeById(from);
+        const toShape = findShapeById(to);
+
+        if (fromShape && toShape) {
+          const closest = getClosestSnapPoints(fromShape, toShape);
+          setConnections(prev => [...prev, {
+            id: uuidv4(),
+            from,
+            to,
+            fromSide: closest.from.side,
+            toSide: closest.to.side
+          }]);
+        }
         selectedForConnection.current = [];
       }
     }
@@ -110,7 +196,9 @@ const App = () => {
     if (!selectedId) return;
     setRectangles(prev => prev.filter(r => r.id !== selectedId));
     setCircles(prev => prev.filter(c => c.id !== selectedId));
+    setScribbles(prev => prev.filter(s => s.id !== selectedId));
     setConnections(prev => prev.filter(conn => conn.from !== selectedId && conn.to !== selectedId));
+    selectedForConnection.current = selectedForConnection.current.filter(id => id !== selectedId);
     setSelectedId(null);
     transformerRef.current.nodes([]);
   };
@@ -124,15 +212,6 @@ const App = () => {
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [selectedId]);
-
-  const getCenter = (shape) => {
-    if (!shape) return { x: 0, y: 0 };
-    if (shape.radius) {
-      return { x: shape.x, y: shape.y };
-    } else {
-      return { x: shape.x + shape.width / 2, y: shape.y + shape.height / 2 };
-    }
-  };
 
   return (
     <div>
@@ -166,6 +245,7 @@ const App = () => {
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
       >
+        {/* Layer 1 - Shapes (background) */}
         <Layer>
           <Rect
             x={0}
@@ -176,27 +256,6 @@ const App = () => {
             onClick={() => transformerRef.current.nodes([])}
           />
 
-          {/* Draw straight connections */}
-          {connections.map((conn) => {
-            const fromShape = findShapeById(conn.from);
-            const toShape = findShapeById(conn.to);
-
-            if (!fromShape || !toShape) return null;
-
-            const start = getCenter(fromShape);
-            const end = getCenter(toShape);
-
-            return (
-              <Line
-                key={conn.id}
-                points={[start.x, start.y, end.x, end.y]}
-                stroke="black"
-                strokeWidth={2}
-              />
-            );
-          })}
-
-          {/* Draw shapes */}
           {rectangles.map((rect) => (
             <Rect
               key={rect.id}
@@ -232,7 +291,55 @@ const App = () => {
             />
           ))}
 
+          {scribbles.map((scribble) => (
+            <Line
+              key={scribble.id}
+              points={scribble.points}
+              stroke={scribble.fillColor}
+              strokeWidth={2}
+              tension={0.5}
+              lineCap="round"
+              lineJoin="round"
+            />
+          ))}
+
+          {/* 🟢 SNAP POINTS VISIBLE IN CONNECT MODE */}
+          {showSnapPoints && getSnapPointsWithShape().map((p, idx) => (
+            <Circle
+              key={idx}
+              x={p.x}
+              y={p.y}
+              radius={4}
+              fill="red"
+              stroke="black"
+              strokeWidth={1}
+            />
+          ))}
           <Transformer ref={transformerRef} />
+        </Layer>
+
+        {/* ✅ Layer 2 - Arrows ABOVE shapes */}
+        <Layer>
+          {connections.map((conn) => {
+            const fromShape = findShapeById(conn.from);
+            const toShape = findShapeById(conn.to);
+            if (!fromShape || !toShape) return null;
+            const fromPos = getSidePosition(fromShape, conn.fromSide);
+            const toPos = getSidePosition(toShape, conn.toSide);
+            return (
+              <Arrow
+                key={conn.id}
+                points={[fromPos.x, fromPos.y, toPos.x, toPos.y]}
+                stroke="black"
+                fill="black"
+                strokeWidth={2}
+                pointerLength={8}
+                pointerWidth={8}
+                lineCap="round"
+                lineJoin="round"
+              />
+            );
+          })}
         </Layer>
       </Stage>
     </div>
