@@ -1,19 +1,11 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Stage, Layer, Rect, Circle, Line, Arrow, Transformer } from 'react-konva';
+import { Stage, Layer, Rect, Circle, Arrow, Transformer } from 'react-konva';
 import { v4 as uuidv4 } from 'uuid';
 import { GiArrowCursor } from "react-icons/gi";
 import { TbRectangle } from "react-icons/tb";
 import { FaRegCircle } from "react-icons/fa";
-import { LuPencil } from "react-icons/lu";
 import { IoMdDownload } from "react-icons/io";
-
-const ACTIONS = {
-  SELECT: 'select',
-  RECTANGLE: 'rectangle',
-  CIRCLE: 'circle',
-  SCRIBBLE: 'scribble',
-  CONNECT: 'connect'
-};
+import { ACTIONS } from './constants';
 
 const App = () => {
   const stageRef = useRef();
@@ -23,7 +15,6 @@ const App = () => {
   const [fillColor, setFillColor] = useState("#fff");
   const [rectangles, setRectangles] = useState([]);
   const [circles, setCircles] = useState([]);
-  const [scribbles, setScribbles] = useState([]);
   const [connections, setConnections] = useState([]);
 
   const isPainting = useRef(false);
@@ -43,7 +34,8 @@ const App = () => {
         { x: shape.x - shape.radius, y: shape.y, side: 'left' },
         { x: shape.x + shape.radius, y: shape.y, side: 'right' }
       ];
-    } else {
+    }
+    else {
       return [
         { x: shape.x + shape.width / 2, y: shape.y, side: 'top' },
         { x: shape.x + shape.width / 2, y: shape.y + shape.height, side: 'bottom' },
@@ -62,10 +54,11 @@ const App = () => {
     });
   };
 
-
   const getClosestSnapPoints = (fromShape, toShape) => {
     const fromPoints = getSnapPoints(fromShape);
     const toPoints = getSnapPoints(toShape);
+
+    // Write a functionality that connects the clicked snap points
 
     let minDistance = Infinity;
     let closest = { from: fromPoints[0], to: toPoints[0] };
@@ -79,7 +72,6 @@ const App = () => {
         }
       });
     });
-
     return {
       from: closest.from,
       to: closest.to
@@ -97,13 +89,10 @@ const App = () => {
 
     switch (action) {
       case ACTIONS.RECTANGLE:
-        setRectangles(prev => [...prev, { id, x, y, width: 0, height: 0, fillColor }]);
+        setRectangles(prev => [...prev, { id, x, y, width: 200, height: 100, fillColor }]);
         break;
       case ACTIONS.CIRCLE:
-        setCircles(prev => [...prev, { id, x, y, radius: 0, fillColor }]);
-        break;
-      case ACTIONS.SCRIBBLE:
-        setScribbles(prev => [...prev, { id, points: [x, y], fillColor }]);
+        setCircles(prev => [...prev, { id, x, y, radius: 20, fillColor }]);
         break;
     }
   };
@@ -121,9 +110,17 @@ const App = () => {
       case ACTIONS.CIRCLE:
         setCircles(prev => prev.map(c => c.id === currentShapeId.current ? { ...c, radius: Math.sqrt((x - c.x) ** 2 + (y - c.y) ** 2) } : c));
         break;
-      case ACTIONS.SCRIBBLE:
-        setScribbles(prev => prev.map(s => s.id === currentShapeId.current ? { ...s, points: [...s.points, x, y] } : s));
+      case ACTIONS.TRIANGLE:
+        const triangleHeight = 100;
+        const triangleWidth = 100;
+        const points = [
+          x, y - triangleHeight / 2,
+          x - triangleWidth / 2, y + triangleHeight / 2,
+          x + triangleWidth / 2, y + triangleHeight / 2
+        ];
+        setTriangles(prev => [...prev, { id, x, y, points, fillColor }]);
         break;
+
     }
   };
 
@@ -157,10 +154,13 @@ const App = () => {
   };
 
   const clicked = (e, id) => {
+
     if (action === ACTIONS.SELECT) {
       transformerRef.current.nodes([e.target]);
       setSelectedId(id);
-    } else if (action === ACTIONS.CONNECT) {
+    }
+
+    else if (action === ACTIONS.CONNECT) {
       selectedForConnection.current.push(id);
       if (selectedForConnection.current.length === 2) {
         const [from, to] = selectedForConnection.current;
@@ -180,17 +180,17 @@ const App = () => {
         selectedForConnection.current = [];
       }
     }
+
   };
 
   const handleExport = () => {
     const data = {
       rectangles,
       circles,
-      scribbles,
       connections
     };
 
-    const json = JSON.stringify(data, null, 2); // Pretty print
+    const json = JSON.stringify(data, null, 2);
     const blob = new Blob([json], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
 
@@ -200,15 +200,13 @@ const App = () => {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-    URL.revokeObjectURL(url); // Clean up
+    URL.revokeObjectURL(url);
   };
-
 
   const deleteSelected = () => {
     if (!selectedId) return;
     setRectangles(prev => prev.filter(r => r.id !== selectedId));
     setCircles(prev => prev.filter(c => c.id !== selectedId));
-    setScribbles(prev => prev.filter(s => s.id !== selectedId));
     setConnections(prev => prev.filter(conn => conn.from !== selectedId && conn.to !== selectedId));
     selectedForConnection.current = selectedForConnection.current.filter(id => id !== selectedId);
     setSelectedId(null);
@@ -236,9 +234,6 @@ const App = () => {
         </button>
         <button className={action === ACTIONS.CIRCLE ? 'bg-violet-300 p-1 rounded' : 'p-1 hover:bg-violet-100 rounded'} onClick={() => setAction(ACTIONS.CIRCLE)}>
           <FaRegCircle size={24} />
-        </button>
-        <button className={action === ACTIONS.SCRIBBLE ? 'bg-violet-300 p-1 rounded' : 'p-1 hover:bg-violet-100 rounded'} onClick={() => setAction(ACTIONS.SCRIBBLE)}>
-          <LuPencil size={24} />
         </button>
         <button className={action === ACTIONS.CONNECT ? 'bg-green-300 p-1 rounded' : 'p-1 hover:bg-green-100 rounded'} onClick={() => setAction(ACTIONS.CONNECT)}>
           Connect
@@ -302,18 +297,6 @@ const App = () => {
             />
           ))}
 
-          {scribbles.map((scribble) => (
-            <Line
-              key={scribble.id}
-              points={scribble.points}
-              stroke={scribble.fillColor}
-              strokeWidth={2}
-              tension={0.5}
-              lineCap="round"
-              lineJoin="round"
-            />
-          ))}
-
           {showSnapPoints && getSnapPointsWithShape().map((p, idx) => (
             <Circle
               key={idx}
@@ -350,6 +333,7 @@ const App = () => {
             );
           })}
         </Layer>
+
       </Stage>
     </div>
   );
