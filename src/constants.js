@@ -4,5 +4,6 @@ export const ACTIONS = {
   CIRCLE: "circle",
   ARROW: "arrow",
   TRIANGLE: "triangle",
-  CONNECT: "connect"
+  CONNECT: "connect",
+  BUBBLE : 'bubble'
 }
