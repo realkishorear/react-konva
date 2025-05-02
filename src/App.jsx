@@ -29,8 +29,33 @@ const App = () => {
   const [connections, setConnections] = useState([]);
   const [selectedId, setSelectedId] = useState(null);
   const [dragLine, setDragLine] = useState(null);
+  const [loadedFromStorage, setLoadedFromStorage] = useState(false);
 
   const isDraggable = action === ACTIONS.SELECT;
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem("canvas-data");
+      if (saved) {
+        const data = JSON.parse(saved);
+        setRectangles(data.rectangles || []);
+        setCircles(data.circles || []);
+        setBubbles(data.bubbles || []);
+        setConnections(data.connections || []);
+        console.log("Canvas data loaded from localStorage.");
+      }
+    } catch (err) {
+      console.error("Failed to load canvas data:", err);
+    } finally {
+      setLoadedFromStorage(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!loadedFromStorage) return;
+    const data = { rectangles, circles, bubbles, connections };
+    localStorage.setItem("canvas-data", JSON.stringify(data));
+  }, [rectangles, circles, bubbles, connections, loadedFromStorage]);
 
   const getSnapPoints = (shape) => {
     if (!shape) return [];
@@ -57,21 +82,32 @@ const App = () => {
 
   const getSidePosition = (shape, side) => {
     if (!shape) return { x: 0, y: 0 };
-    if (shape.radius) {
-      const r = shape.radius;
+    const angle = (shape.rotation || 0) * Math.PI / 180;
+
+    const rotatePoint = (x, y) => {
+      const dx = x - shape.x;
+      const dy = y - shape.y;
       return {
-        top: { x: shape.x, y: shape.y - r },
-        bottom: { x: shape.x, y: shape.y + r },
-        left: { x: shape.x - r, y: shape.y },
-        right: { x: shape.x + r, y: shape.y },
+        x: shape.x + (dx * Math.cos(angle) - dy * Math.sin(angle)),
+        y: shape.y + (dx * Math.sin(angle) + dy * Math.cos(angle)),
+      };
+    };
+
+    if (shape.radius) {
+      return {
+        top: { x: shape.x, y: shape.y - shape.radius },
+        bottom: { x: shape.x, y: shape.y + shape.radius },
+        left: { x: shape.x - shape.radius, y: shape.y },
+        right: { x: shape.x + shape.radius, y: shape.y },
       }[side];
     } else {
-      return {
+      const raw = {
         top: { x: shape.x + shape.width / 2, y: shape.y },
         bottom: { x: shape.x + shape.width / 2, y: shape.y + shape.height },
         left: { x: shape.x, y: shape.y + shape.height / 2 },
         right: { x: shape.x + shape.width, y: shape.y + shape.height / 2 },
       }[side];
+      return rotatePoint(raw.x, raw.y);
     }
   };
 
@@ -210,6 +246,7 @@ const App = () => {
             fill="white"
             onClick={() => transformerRef.current.nodes([])}
           />
+          {/* Shapes Rendering */}
           {rectangles.map((r) => (
             <Rect
               key={r.id}
@@ -220,14 +257,27 @@ const App = () => {
               fill={r.fillColor}
               stroke="black"
               strokeWidth={2}
+              rotation={r.rotation || 0}
               draggable={isDraggable}
               onClick={(e) => {
+                e.cancelBubble = true;
                 setSelectedId(r.id);
                 transformerRef.current.nodes([e.target]);
               }}
               onDragMove={(e) =>
                 setRectangles(prev => prev.map(x => x.id === r.id ? { ...x, x: e.target.x(), y: e.target.y() } : x))
               }
+              onTransformEnd={(e) => {
+                const node = e.target;
+                const scaleX = node.scaleX();
+                const scaleY = node.scaleY();
+                node.scaleX(1);
+                node.scaleY(1);
+                setRectangles(prev => prev.map(rect =>
+                  rect.id === r.id
+                    ? { ...rect, x: node.x(), y: node.y(), width: rect.width * scaleX, height: rect.height * scaleY, rotation: node.rotation() }
+                    : rect));
+              }}
             />
           ))}
           {circles.map((c) => (
@@ -239,14 +289,26 @@ const App = () => {
               fill={c.fillColor}
               stroke="black"
               strokeWidth={2}
+              rotation={c.rotation || 0}
               draggable={isDraggable}
               onClick={(e) => {
+                e.cancelBubble = true;
                 setSelectedId(c.id);
                 transformerRef.current.nodes([e.target]);
               }}
               onDragMove={(e) =>
                 setCircles(prev => prev.map(x => x.id === c.id ? { ...x, x: e.target.x(), y: e.target.y() } : x))
               }
+              onTransformEnd={(e) => {
+                const node = e.target;
+                const scale = node.scaleX();
+                node.scaleX(1);
+                node.scaleY(1);
+                setCircles(prev => prev.map(circle =>
+                  circle.id === c.id
+                    ? { ...circle, x: node.x(), y: node.y(), radius: circle.radius * scale, rotation: node.rotation() }
+                    : circle));
+              }}
             />
           ))}
           {bubbles.map((b) => (
@@ -258,23 +320,36 @@ const App = () => {
                 0, 0,
                 b.width, 0,
                 b.width, b.height,
-                50, b.height,       
-                30, b.height + 30,  
-                20, b.height,       
+                50, b.height,
+                30, b.height + 30,
+                20, b.height,
                 0, b.height,
               ]}
               fill={b.fillColor}
               stroke="black"
               strokeWidth={2}
               closed
+              rotation={b.rotation || 0}
               draggable={isDraggable}
               onClick={(e) => {
+                e.cancelBubble = true;
                 setSelectedId(b.id);
                 transformerRef.current.nodes([e.target]);
               }}
               onDragMove={(e) =>
                 setBubbles(prev => prev.map(x => x.id === b.id ? { ...x, x: e.target.x(), y: e.target.y() } : x))
               }
+              onTransformEnd={(e) => {
+                const node = e.target;
+                const scaleX = node.scaleX();
+                const scaleY = node.scaleY();
+                node.scaleX(1);
+                node.scaleY(1);
+                setBubbles(prev => prev.map(bubble =>
+                  bubble.id === b.id
+                    ? { ...bubble, x: node.x(), y: node.y(), width: bubble.width * scaleX, height: bubble.height * scaleY, rotation: node.rotation() }
+                    : bubble));
+              }}
             />
           ))}
           {action === ACTIONS.CONNECT && getAllSnapPoints().map((p, i) => (
@@ -288,7 +363,7 @@ const App = () => {
               onMouseDown={() => handleSnapPointDown(p)}
             />
           ))}
-          <Transformer ref={transformerRef} />
+          <Transformer ref={transformerRef} rotateEnabled={true} />
         </Layer>
         <Layer>
           {connections.map((conn) => {
